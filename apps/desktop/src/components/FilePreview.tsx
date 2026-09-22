@@ -70,12 +70,16 @@ interface PdfDocLike {
 }
 
 /** pdf.js 现代版构建对内核要求很高（Promise.withResolvers、Math.sumPrecise 等），
- *  老内核 WebView 会在渲染期抛错或静默退化成系统字体——先补垫片（见 lib/pdf-runtime.ts），
- *  失败自动换 legacy 构建（自带面向旧环境的转译与垫片），两轮都失败才把错误交回 UI。
+ *  老内核 WebView 会在渲染期抛错或静默退化成系统字体——按内核**原生**能力挑构建，
+ *  缺 API 时优先 legacy（自带面向旧环境的转译与垫片），两轮都失败才把错误交回 UI。
  *  留痕用 console（安卓上可被 logcat 抓到），便于下次排障。 */
 async function loadPdfDoc(dataUrl: string): Promise<PdfDocLike> {
-  ensurePdfRuntimeShims();
+  // 顺序要紧：先探测内核**原生**能力，再补垫片。
+  // 垫片只作用于主线程；pdf.js 的字体修复（checkAndRepair → Math.sumPrecise）跑在 worker，
+  // 那是独立 realm，主线程的垫片进不去。若先补垫片，探测会被自己的垫片污染成 true，
+  // 于是选中现代构建、worker 里再抛异常并静默退化成系统字体（R27 手机乱码的真因）。
   const modernOk = hasModernPdfRuntime();
+  ensurePdfRuntimeShims();
   const modern = { mod: () => import("pdfjs-dist"), worker: () => import("pdfjs-dist/build/pdf.worker.min.mjs?url"), tag: "modern" } as const;
   const legacy = {
     mod: () => import("pdfjs-dist/legacy/build/pdf.mjs"),

@@ -80,12 +80,13 @@ console.log("[3] 垫片纪律：不可枚举，且不覆盖已存在的原生实
   ok(Map.prototype.getOrInsert === sentinel, "已存在的方法不会被垫片覆盖");
 }
 
-console.log("[4] 真实调用点：loadPdfDoc 里先垫片、再按能力挑构建顺序");
+console.log("[4] 真实调用点：loadPdfDoc 先按原生能力挑构建，再垫片兜底");
 {
   const src = await import("node:fs").then((fs) => fs.readFileSync("apps/desktop/src/components/FilePreview.tsx", "utf8"));
   const body = src.slice(src.indexOf("async function loadPdfDoc"));
-  ok(/ensurePdfRuntimeShims\(\)/.test(body), "loadPdfDoc 开头调用 ensurePdfRuntimeShims()");
+  ok(/ensurePdfRuntimeShims\(\)/.test(body), "loadPdfDoc 调用 ensurePdfRuntimeShims() 兜底主线程 API");
   ok(/const modernOk = hasModernPdfRuntime\(\)/.test(body), "loadPdfDoc 用 hasModernPdfRuntime() 决定顺序");
+  ok(body.indexOf("hasModernPdfRuntime()") < body.indexOf("ensurePdfRuntimeShims()"), "探测在垫片之前（否则会被垫片污染成支持现代构建）");
   ok(/modernOk \? \(\[modern, legacy\]/.test(body) && /\[legacy, modern\]/.test(body), "缺 API 时把 legacy 排在前面（仍保留兜底）");
   ok(/\[FILE-PREVIEW\]/.test(body), "留了 logcat 可抓的 console 痕迹");
 }
@@ -100,7 +101,8 @@ console.log("[5] Math.sumPrecise：缺失时 pdf.js 会静默退化成系统字�
 
   ensurePdfRuntimeShims();
   ok(typeof Math.sumPrecise === "function", "垫片补上了 Math.sumPrecise");
-  ok(hasModernPdfRuntime(), "补齐后 hasModernPdfRuntime() 为 true");
+  ok(hasModernPdfRuntime(), "垫片装好后探测为 true——正因如此，App 必须**先探测再垫片**（见 [4]/[6]）；" +
+    "worker 是独立 realm，这里的垫片进不去，缺 API 时只能靠 legacy 构建兜住 worker");
 
   const sum = Math.sumPrecise([0.1, 0.2, 0.3]);
   ok(sum === 0.6, `补偿求和：0.1+0.2+0.3 === 0.6（朴素累加会得到 ${0.1 + 0.2 + 0.3}）`);
@@ -113,12 +115,13 @@ console.log("[5] Math.sumPrecise：缺失时 pdf.js 会静默退化成系统字�
   ok(!Object.keys(Math).includes("sumPrecise"), "sumPrecise 不可枚举");
 }
 
-console.log("[6] 真实调用点：垫片先于能力探测，且没有引入 disableFontFace 之类的旁路");
+console.log("[6] 真实调用点：能力探测先于垫片，且没有引入 disableFontFace 之类的旁路");
 {
   const fs = await import("node:fs");
   const src = fs.readFileSync("apps/desktop/src/components/FilePreview.tsx", "utf8");
   const body = src.slice(src.indexOf("async function loadPdfDoc"));
-  ok(body.indexOf("ensurePdfRuntimeShims()") < body.indexOf("hasModernPdfRuntime()"), "loadPdfDoc 先垫片、再探测");
+  // 顺序反了就会被自己的垫片污染成"内核支持"，选中现代构建后在 worker 里继续炸（R27 真因）
+  ok(body.indexOf("hasModernPdfRuntime()") < body.indexOf("ensurePdfRuntimeShims()"), "loadPdfDoc 先探测原生能力、再垫片");
   ok(/getDocument\(\{ data: dataUrlBytes\(dataUrl\) \}\)/.test(body), "getDocument 只传 data（不旁路字体）");
   ok(!/disableFontFace/.test(body), "不再使用 disableFontFace（它会让现代构建画出无字体文本）");
 }

@@ -12,16 +12,22 @@
  * "解析失败就换 legacy 构建"这条既有兜底永远不会触发，用户看到的是渲染期 TypeError。
  * legacy 构建自带 core-js 垫片，老内核 WebView 可用。
  *
- * R27 补充（2026-09-22，课后练习题-01.pdf）：`Math.sumPrecise` 缺失**不会报错到 UI**，
- * 而是让 pdf.js 的字体翻译逐个字体抛 TypeError 后被吞掉，退化成"用系统字体画编码码位"。
- * 该 PDF 的内嵌子集字体只有 Mac(1,0) cmap，于是整页显示成 MacRoman 符号（`ü Ä ñ ™ ≤`），
- * 只有少数带 ToUnicode 的汉字可读——即用户看到的"大部分乱码、少部分可读"。
- * 本地 A/B 实测：缺该 API 时 pdf.js 用系统字体、画 MacRoman 码位；补上后立刻改用内嵌
- * 字体（合成字体 g_d0_fN + PUA 码位），渲染正常。
+ * R27 定论（2026-09-22，adb + WebView CDP 在真机上抓到）：`Math.sumPrecise` 缺失时，
+ * pdf.js 的字体修复 `checkAndRepair()`（在 **worker** 里跑）抛异常并被吞掉，退化成
+ * "按名字找系统字体"（`local(SimSun)` 等）。该 PDF 的内嵌子集字体只有 Mac(1,0) cmap、
+ * 且不带 ToUnicode，于是整页画成 MacRoman 符号（`ü Ä ñ ™ ≤`），只有少数汉字可读——
+ * 即用户看到的"大部分乱码、少部分可读"。安卓没有 SimSun/微软雅黑/Consolas，所以只有手机炸；
+ * 电脑的 WebView2 原生带该 API，故一直正常。
+ *
+ * **关键约束：垫片只覆盖主线程，worker 是独立 realm，装不进去。**
+ * 因此 `hasModernPdfRuntime()` 必须在 `ensurePdfRuntimeShims()` **之前**调用——它问的是
+ * "内核原生是否具备"，不是"垫片补完后是否具备"。顺序反了就会被自己的垫片污染成 true，
+ * 选中现代构建后在 worker 里继续炸。缺 API 时正确的做法是走 legacy 构建：
+ * 它的 worker 里也打包了 core-js（含 `Math.sumPrecise`），这才是真正能兜住 worker 的那层。
  *
  * 两层保险：
- *   ① `hasModernPdfRuntime()` 按能力挑构建（缺 API 时优先 legacy）；
- *   ② `ensurePdfRuntimeShims()` 补最小垫片——即使现代构建已经加载，也不会在渲染期炸。
+ *   ① `hasModernPdfRuntime()` 按**原生**能力挑构建（缺 API 时优先 legacy）；
+ *   ② `ensurePdfRuntimeShims()` 补主线程最小垫片（现代构建的主线程也用到这些 API）。
  *
  * 单独成模块是为了可测：`tools/pdf-runtime-test.mjs` 会先把这些 API 删掉，
  * 再验证垫片语义（手机上无法复现的 bug，只能靠这类断言守）。
@@ -40,7 +46,9 @@ type MathSumPrecise = {
   sumPrecise?: (items: Iterable<number>) => number;
 };
 
-/** 内核是否具备 pdf.js v6 现代构建所需的全部 API（含本模块补上的垫片） */
+/** 内核**原生**是否具备 pdf.js v6 现代构建所需的全部 API。
+ *  必须在 `ensurePdfRuntimeShims()` 之前调用：pdf.js 的字体修复在 worker 里跑，
+ *  主线程垫片覆盖不到 worker，被垫片污染的 true 会让现代构建在 worker 里静默降级。 */
 export function hasModernPdfRuntime(): boolean {
   return (
     typeof (Map.prototype as PdfRuntimeProto).getOrInsertComputed === "function" &&
