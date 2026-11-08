@@ -40,6 +40,7 @@ import { helper as infoHelper } from "../lib/infoLib.js";
 import { explainNetworkError } from "../lib/transport.js";
 import { softRecover, ensureLearnSession, recoverCampusSession } from "../lib/reload.js";
 import { subscribeAuthRecovered } from "../lib/authRecovery.js";
+import { showToast } from "./toast.js";
 import { appendSecondarySchedule } from "../lib/scheduleSecondary.js";
 import { buildRows, buildSlotIndex, canAdjustZy as canAdjustZyFn, levelTypesOf, parseTimeSlots, type SlotItem, type XkRow, type XkKnote, applyKnote, rememberKnote, isSportsCourse } from "../lib/xklogic.js";
 import type { XkPlanItem } from "@onethu/core";
@@ -490,7 +491,7 @@ export function stopLearnAutoRefresh(): void {
 
 export function useLearnData() {
   const { preview, cacheGet } = useDataScope();
-  const { status } = useApp();
+  const { status, backToLogin } = useApp();
   const [data, setData] = useState<LearnBundle | null>(() => preview ? cacheGet<LearnBundle>("learn")?.data ?? null : cache?.data ?? null);
   const [state, setState] = useState<DataState>((preview ? cacheGet<LearnBundle>("learn") : cache?.data) ? "ready" : "loading");
   const [error, setError] = useState<string | null>(null);
@@ -608,10 +609,22 @@ export function useLearnData() {
       再重走数据。长闲置后 learn 会话单独过期时，这是唯一能让按钮真正生效的路径。 */
   const retry = useCallback(async () => {
     if (preview) return;
-    const ok = await recoverCampusSession("learn").catch(() => false);
-    if (!ok) await softRecover("learn").catch(() => false);
+    let ok = await recoverCampusSession("learn").catch(() => false);
+    if (!ok) {
+      /* lib 主会话探活成功但 learn 漫游失败、或进程重启后 helper 凭据尚未回灌时，
+         再做一次「记住密码」完整登录；成功后重新建 learn 会话。 */
+      const { trySilentRelogin } = await import("../lib/clients.js");
+      const silent = await trySilentRelogin().catch(() => ({ ok: false as const }));
+      if (silent.ok) ok = await ensureLearnSession().catch(() => false);
+    }
+    if (!ok) {
+      /* 没有可用凭据/需要 2FA：重试不能无限撞同一堵墙，给明确出口。 */
+      showToast(i18n("state.data.learnRetryNeedsLogin"));
+      void backToLogin();
+      return;
+    }
     await load();
-  }, [preview, load]);
+  }, [preview, load, backToLogin]);
 
   return { data, state, error, reload: retry };
 }

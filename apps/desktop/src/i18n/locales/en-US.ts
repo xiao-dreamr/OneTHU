@@ -6936,6 +6936,7 @@ const locale = {
     "state.cloudexchange.bcd2da321c5e": "The original share was not fully updated: {value}",
     "state.cloudexchange.e1239b54f9b2": "Could not read the share. Check your network, or ask the sender to confirm the share code has not expired or been revoked: {value}",
     "state.cloudexchange.ee7944db0bd9": "Revoking the old share did not finish. Please retry.",
+    "state.data.learnRetryNeedsLogin": "The learning session could not be restored. Please sign in again.",
     "state.data.017029db358e": "Queue data refreshed · Remaining seats for {length} courses · {length2} courses in my queue",
     "state.data.0f1ade7c641d": "Paste exported draft JSON",
     "state.data.14fa0b5c5261": "{nm} classes begin",

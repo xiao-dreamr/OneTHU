@@ -6936,6 +6936,7 @@ const locale = {
     "state.cloudexchange.bcd2da321c5e": "原分享更新未完成：{value}",
     "state.cloudexchange.e1239b54f9b2": "无法读取分享，请检查网络或请对方确认口令未过期/撤销：{value}",
     "state.cloudexchange.ee7944db0bd9": "旧分享撤销未完成，请重试",
+    "state.data.learnRetryNeedsLogin": "网络学堂登录状态未能恢复，请重新登录。",
     "state.data.017029db358e": "队列数据已刷新 · {length}门课余量 · {length2}门我的队列",
     "state.data.0f1ade7c641d": "粘贴导出的草稿 JSON",
     "state.data.14fa0b5c5261": "{nm} 开学",

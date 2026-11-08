@@ -748,13 +748,15 @@ export const getSecondaryEntries = async (
 /** 强制完整重登（选课死结借用）：不走探活短路——id 会话权威单一来源，
  *  选课判死时由这里重建，选课不再自清仓互踢（2026-09-18 架构定案） */
 export async function libForceRelogin(): Promise<boolean> {
-  const username = inflight?.username ?? "";
-  const password = inflight?.password ?? "";
-  if (!username || !password) return false;
   // 受信凭据喂给 lib：helper.fingerGenPrint 是内存变量，boot 恢复/进程重启后
   // 为空 → libLogin 传空指纹 → id 要 2FA → 强制重登必撞墙（02:23 实录
   // "lib 重登失败 → 回退自清仓"）。sessionFinger3（持久层）优先喂入。
   await libHydrateCredentials(); // 凭据 + 受信指纹统一从持久层回灌
+  const h = helper as unknown as { userId?: string; password?: string };
+  /* inflight 只在本次进程内有效；长闲置/重启后要用 helper 里回灌的「记住密码」。 */
+  const username = inflight?.username || h.userId || "";
+  const password = inflight?.password || h.password || "";
+  if (!username || !password) return false;
   const r = await libLogin(username, password, helper.fingerprint).catch(() => null);
   return r?.state === "ready";
 }
