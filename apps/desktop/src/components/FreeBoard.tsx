@@ -44,6 +44,8 @@ import { defForSpec, type WidgetDef, type WidgetSize } from "../state/widgetMeta
 import { planForItem } from "../state/widgetRender.js";
 import { BOARD_TEMPLATES, templateItems, type BoardTemplate } from "../state/boardTemplates.js";
 import { WidgetHost, type WidgetRenderer } from "./WidgetHost.js";
+import { PluginActionCard } from "./PluginActionCard.js";
+import { PLUGIN_ACTION_PREFIX } from "../state/pluginAction.js";
 import { BoardAddDrawer } from "./BoardAddDrawer.js";
 import { WidgetStylePicker } from "./WidgetStylePicker.js";
 import { BoardItemPicker, type PickerItem } from "./BoardItemPicker.js";
@@ -163,6 +165,11 @@ function ItemBody({ item, defs, renderers, onOpen, onFolderAdd, onProps }: {
 
   const { navigate } = useApp();
   const spec = item.spec;
+  /* 插件交互卡片（保留命名空间 custom:plugin-action:<pluginId>:<cardId>）：
+     宿主只画壳，点击时跑插件自己的命令；不是合法卡片则继续走普通分支。 */
+  if (spec.kind === "custom" && spec.id.startsWith(PLUGIN_ACTION_PREFIX)) {
+    return <PluginActionCard item={item} />;
+  }
   /* OnePage 入口（组合组件之一）：把另一块 OnePage 钉在画布上，点击即打开 */
   if (spec.kind === "custom" && spec.id === "onepage") {
     const boardId = typeof spec.props?.boardId === "string" ? spec.props.boardId : "";

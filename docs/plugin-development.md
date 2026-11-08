@@ -540,6 +540,43 @@ const st = await ctx.onethu.notify.status(true);   // 传 true 才会发起授�
 | 用户可见 | 设置 → 通知 → 「插件通知」按插件列出待投递条数，可一键撤销（用户可最终决定是否接收插件通知） |
 | 平台差异 | Android 使用通知渠道与定时闹钟（进程被终止后仍可送达）；macOS 使用系统通知中心；Windows 使用 toast。三端的点击落点深链在桌面端尚未接入（见 architecture.md） |
 
+### 6.7 白板交互卡片（插件动作卡）
+
+白板的 `custom` 组件原本只有「用户生成 HTML」（静态、无事件）。想要一个**点一下有反应**
+的组件（电子木鱼、打卡计数、小游戏入口），用交互卡片：宿主画壳（左上角状态、中央图标、
+底部标题），点击时调用插件**自己的命令**，命令返回值成为卡片状态文本。
+
+```js
+// 点一下跑 `tap`，挂载时跑 `status` 取初始状态；缺省放首页，同 cardId 重复调用是更新
+const { id, boardId, reused } = await ctx.onethu.ext.actionCard({
+  cardId: "main",                 // 插件内唯一；同 id 再调 = 就地更新（不重复长卡）
+  title: "电子木鱼",
+  icon: "🐟",                     // 单行文本（emoji/一个字）；也可用 CSS 覆盖
+  tapCmdId: "tap",
+  statusCmdId: "status",
+  boardId: undefined,             // 缺省 = 首页系统板；也可传 onePageList() 里的 boardId
+  x: 0, y: 0, w: 3, h: 3,
+});
+
+// 移除（只删本插件的卡）
+await ctx.onethu.ext.actionCardRemove("main");
+```
+
+| 规则 | 说明 |
+|---|---|
+| 权限 | `ui`；`actionCardRemove` 同权限 |
+| 命令归属 | 只能引用**本插件**已注册的命令；命令不存在时创建即报错 |
+| 状态文本 | 命令返回字符串（或 `{ text }`）作为左上角状态；超长截断，纯文本渲染 |
+| 连点 | 每次点击立即执行一次命令，不做防抖；只允许较新的结果覆盖显示（乱序保护） |
+| 图标与外观 | `icon` 是文本；插件可用 `registerCss` 以 `[data-plugin-action="<插件id>:<cardId>"]` 限定作用域覆盖背景/字号 |
+| 停用/卸载 | 卡片保留并显示「插件已停用」，点击不执行；插件可用 `actionCardRemove` 自行清理 |
+| 能力边界 | 卡片不渲染插件 HTML/JS；需要完整界面请用插件功能页（§6.3） |
+
+**为什么不做成 iframe/自定义渲染器**：卡片是首页与 OnePage 上的一等条目，要参与拖动、
+缩放、样式档、Android 桌面小组件与板文档持久化；开放任意脚本渲染面既破坏这些语义，
+也把安全边界从「插件进程」扩大到「每个卡片实例」。命令回调 + 文本状态是能覆盖
+计数/打卡/小游戏入口这类需求的最小面。
+
 ## 7. 接入新的清华服务
 
 宿主已实现为独立命名空间的服务（`info`、`learn`、`library` 等）之外，其他清华校内
@@ -847,6 +884,7 @@ Android WebView 环境不允许执行任意路径的二进制文件，sidecar �
 
 | 版本 | 变更 |
 |---|---|
+| v1.22 | 新增白板**插件交互卡片**：`ext.actionCard` / `ext.actionCardRemove`（`ui`）。插件在白板/首页放一张卡片，点击执行自己的命令并把返回文本显示在左上角；同 cardId 就地更新，停用显示「插件已停用」；配套 `state/pluginAction.ts` 纯数据层与渲染壳 `components/PluginActionCard.tsx` |
 | v1.21 | 新增 `gitlab` 命名空间与 `gitlab:read` / `gitlab:write` 权限：项目、仓库文件、Issue、合并请求（讨论线程、回复、解决、表情回应、指派、文件变更、新建与合入）、流水线与作业日志，以及条目计数与 ZIP 归档（api-reference §17）；桌面新增 GitLab 页与 `gitlab.ts` 状态层 |
 | v1.20 | 插件公告热通道（§3.1 `announce` 字段 + §8.4.1 `NOTICE.md` 约定）：激活/打开时后台拉取仓库公告，digest 判新，卡片弹「📢 公告」；**市场列表版本号实时化**：已装卡片/网页市场卡片的版本号直接从各插件仓库最新 manifest 取，名单快照仅作兜底显示 |
 | v1.19 | 插件更新机制：已安装插件卡片自带「检查更新/更新」（本体仓库优先：直接拉仓库最新 manifest 比版本，与安装同管线覆盖更新）；市场名单 version 降级为收录快照，不再要求作者同步维护 |

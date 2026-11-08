@@ -461,6 +461,17 @@ export interface OnethuApi {
     widgetCreate(name: string, html: string, x?: number, y?: number): { id: string };
     widgetList(): Array<{ id: string; name: string; createdAt: number }>;
     widgetDelete(id: string): void;
+    /** 在白板上放一张「插件交互卡片」：点一下执行本插件的 `tapCmdId`，卡片左上角显示命令返回的状态文本。
+     *  `cardId` 为插件内唯一标识：同 id 重复调用是就地更新（不会长两张）；`boardId` 缺省 = 首页系统板
+     *  （`onePageList()` 里 `kind === "system"` 那块）。只能调用本插件自己的命令；卡片内容全按纯文本渲染。
+     *  典型用途：电子木鱼、打卡计数器、小游戏入口。 */
+    actionCard(input: {
+      cardId: string; title: string; tapCmdId: string; statusCmdId?: string;
+      icon?: string; input?: string; boardId?: string;
+      x?: number; y?: number; w?: number; h?: number;
+    }): Promise<{ id: string; boardId: string; reused: boolean }>;
+    /** 移除本插件之前放的交互卡片（只删自己的；不传 boardId = 所有板）。 */
+    actionCardRemove(cardId: string, boardId?: string): Promise<{ ok: boolean }>;
     onePageCreate(name: string, icon?: string): { id: string };
     onePageList(): Array<{ id: string; name: string; kind: string; icon: string }>;
     onePageDelete(id: string): { ok: boolean; reason?: string };

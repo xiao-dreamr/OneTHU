@@ -54,6 +54,7 @@ import {
   openOnePage, removeOnePage, renameOnePage,
 } from "../state/onePage.js";
 import { SYSTEM_BOARD_ID, rectFromCell } from "../state/boardCore.js";
+import { normalizePluginActionConfig, pluginActionItemId, pluginActionRect, withPluginActionItem, withoutPluginActionItem } from "../state/pluginAction.js";
 import { renameBoard } from "../state/boardOps.js";
 import {
   allSphereEntries, dockSphere, sphereEntry, spheresSnapshot, undockSphere,
@@ -1050,6 +1051,55 @@ export function buildApi(pluginId: string, perms: Set<string>, options: { before
           return touched ? { ...doc, boards } : null;
         });
         notifyBoardsChanged();
+      },
+      /* 白板「插件交互卡片」：卡片只是壳，点击时跑插件自己的命令（插件代码在 webview 里，
+         能播音效、改自己的 storage）。卡片内容全部纯文本渲染，不引入任意 HTML/JS。 */
+      actionCard: async (input) => {
+        gate(perms, "ui", "ext.actionCard");
+        const config = normalizePluginActionConfig(pluginId, input as never);
+        const { liveCommands } = await import("./loader.js");
+        if (!liveCommands.has(`${pluginId}:${config.tapCmdId}`)) {
+          throw new Error(i18n("plugins.facade.actionCardNoCmd", { cmd: String(config.tapCmdId) }));
+        }
+        if (config.statusCmdId && !liveCommands.has(`${pluginId}:${config.statusCmdId}`)) {
+          throw new Error(i18n("plugins.facade.actionCardNoCmd", { cmd: String(config.statusCmdId) }));
+        }
+        const boardId = String((input as { boardId?: unknown } | undefined)?.boardId ?? "").trim() || SYSTEM_BOARD_ID;
+        const rect = pluginActionRect(input as never);
+        const itemId = "it." + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+        let reused = false;
+        let placed = false;
+        mutateBoards((doc) => {
+          const board = doc.boards.find((b) => b.id === boardId);
+          if (!board) return null;
+          const applied = withPluginActionItem(board.cells.portrait ?? [], config, rect, itemId);
+          reused = applied.reused;
+          placed = true;
+          return {
+            ...doc,
+            boards: doc.boards.map((b) => (b.id === boardId ? { ...b, cells: { ...b.cells, portrait: applied.items } } : b)),
+          };
+        });
+        if (!placed) throw new Error(i18n("plugins.facade.ef62cd3182c8"));
+        return { id: pluginActionItemId(pluginId, config.cardId), boardId, reused };
+      },
+      actionCardRemove: async (cardId: string, boardId?: string) => {
+        gate(perms, "ui", "ext.actionCardRemove");
+        const card = String(cardId ?? "").trim();
+        if (!/^[A-Za-z0-9._-]{1,64}$/.test(card)) throw new Error("cardId 必须是 1–64 位字母/数字/._-");
+        const want = String(boardId ?? "").trim();
+        let removed = false;
+        mutateBoards((doc) => {
+          const boards = doc.boards.map((b) => {
+            if (want && b.id !== want) return b;
+            const applied = withoutPluginActionItem(b.cells.portrait ?? [], pluginId, card);
+            if (!applied.removed) return b;
+            removed = true;
+            return { ...b, cells: { ...b.cells, portrait: applied.items } };
+          });
+          return removed ? { ...doc, boards } : null;
+        });
+        return { ok: removed };
       },
       onePageCreate: (name: string, icon?: string): { id: string } => {
         gate(perms, "ui", "ext.onePageCreate");
