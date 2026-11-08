@@ -535,6 +535,14 @@ export function buildApi(pluginId: string, perms: Set<string>, options: { before
       physicalExam: () => info.getPhysicalExamResult(),
       assessmentList: () => info.getAssessmentList(),
     }, perms, "info:read") as OnethuApi["info"],
+    /* 系统字体（PDF 字形轮廓匹配）：只读白名单路径，需 font:read；找不到返回 null。 */
+    fonts: {
+      system: async (family: string) => {
+        gate(perms, "font:read", "fonts.system");
+        const { readSystemFont } = await import("../lib/systemFonts.js");
+        return readSystemFont(String(family ?? ""));
+      },
+    },
     learn: wrap({
       semesters: () => learn.getSemesterIdList(),
       courses: async (semesterId?: string) => {
@@ -569,6 +577,12 @@ export function buildApi(pluginId: string, perms: Set<string>, options: { before
         const { downloadLearnFile } = await import("../lib/clients.js");
         const name = filename?.trim() || `learn-${fileId}`;
         return downloadLearnFile(fileId, name);
+      },
+      /** 读取课件/附件原始字节（base64）：插件解析 PDF/二进制用。走同一 learn 专线会话
+       *  （webvpn 包装域 + 原生 cookie 仓 + _csrf），登录墙由 learnFileContent 识别成明确错误。 */
+      fileContent: async (fileId: string, filename?: string) => {
+        const { learnFileContent } = await import("../lib/clients.js");
+        return learnFileContent(fileId, filename);
       },
       reply: (wlkcid: string, threadId: string, content: string) => {
         gate(perms, "learn:write", "learn.reply");

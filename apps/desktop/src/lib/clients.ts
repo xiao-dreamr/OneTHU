@@ -1275,6 +1275,42 @@ export function isLoginWallBody(mime: string, buf: Uint8Array): boolean {
   return /location\.href/i.test(head) || /^<(!doctype|html)/i.test(head);
 }
 
+/** 插件读取课件/附件原始字节的上限：webview 里 base64 会再放大 4/3，64MB 原文件
+ *  约 85MB 字符串，超过就别在插件进程里解析了（提示用户先下载到本地）。 */
+export const LEARN_FILE_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * 读取课件/附件的**原始字节**（插件解析 PDF 等二进制用）。
+ *
+ * 取数形态与图片/预览完全一致：`sessionUrl` 换成会话可达的 webvpn 包装形态并补
+ * learn 的 `_csrf`，再用 nativeFetch 走原生通道（原生 cookie 仓 + 主 webview UA）。
+ * 直连 learn 域或 JS 侧 tauriFetch 都拿不到会话（见 downloadLearnUrl / fetchImageDataUrl
+ * 注释里的实录），所以这里不能图省事用普通 fetch。
+ *
+ * 返回 base64 而不是 ArrayBuffer：插件门面走 JSON-RPC 文本桥，二进制只能这样过。
+ */
+export async function learnFileContent(
+  fileId: string,
+  filename?: string,
+): Promise<{ name: string; mime: string; size: number; b64: string }> {
+  const id = String(fileId ?? "").trim();
+  if (!id) throw new Error(i18n("lib.clients.learnFileIdRequired"));
+  const name = String(filename ?? "").trim() || `learn-${id}`;
+  const { LEARN_FILE_DOWNLOAD } = await import("@onethu/core");
+  const resp = await nativeFetch(sessionUrl(LEARN_FILE_DOWNLOAD(id)), { method: "GET" });
+  const mime = (resp.headers.get("content-type") ?? "").split(";")[0]?.trim() ?? "";
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  if (!buf.length) throw new Error(i18n("lib.clients.learnFileEmpty", { name }));
+  if (buf.length > LEARN_FILE_MAX_BYTES) {
+    throw new Error(i18n("lib.clients.learnFileTooLarge", {
+      mb: String(Math.round(buf.length / (1024 * 1024))),
+      max: String(Math.round(LEARN_FILE_MAX_BYTES / (1024 * 1024))),
+    }));
+  }
+  if (isLoginWallBody(mime, buf)) throw new Error(i18n("lib.clients.193d04db6243"));
+  return { name, mime, size: buf.length, b64: bytesToBase64(buf) };
+}
+
 async function fetchImageDataUrl(url: string, forceWrap: boolean): Promise<string> {
   const resp = await nativeFetch(sessionUrl(url, forceWrap), { method: "GET" });
   const mime = (resp.headers.get("content-type") ?? "").split(";")[0]?.trim() ?? "";

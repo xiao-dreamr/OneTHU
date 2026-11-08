@@ -27,6 +27,7 @@ export type PluginPermission =
   | "library:read" // 图书馆楼层/区域/座位/记录查询 + 研讨间查询
   | "library:book" // 图书馆座位预约/取消 + 研讨间预约/取消（写操作）
   | "network:read" // 校园网账户/设备/余额（只读）
+  | "font:read" // 读取系统自带字体文件（PDF 字形轮廓匹配用；仅白名单路径，只读）
   | "learn:read" // 网络学堂课程/作业/通知/文件/讨论区（只读）
   | "learn:write" // 网络学堂讨论区发帖/回帖（写操作，需确认）
   | "venue:read" // 体育场馆场景/场地/我的预约（只读）
@@ -71,6 +72,7 @@ export const PLUGIN_PERMISSIONS: ReadonlyArray<{ id: PluginPermission; label: st
   { id: "vault:read", get label() { return i18n("permissions.vault.label"); }, get desc() { return i18n("permissions.vault.desc"); } },
   { id: "vault:write", get label() { return i18n("permissions.vaultWrite.label"); }, get desc() { return i18n("permissions.vaultWrite.desc"); } },
   { id: "info:read", get label() { return i18n("plugins.types.92acc8140843"); }, get desc() { return i18n("plugins.types.e98935ae658f"); } },
+  { id: "font:read", get label() { return i18n("permissions.fontRead.label"); }, get desc() { return i18n("permissions.fontRead.desc"); } },
   { id: "learn:read", get label() { return i18n("plugins.types.cf01361e883f"); }, get desc() { return i18n("plugins.types.d7ca0f2e28a2"); } },
   { id: "learn:write", get label() { return i18n("plugins.types.112f4f9c033a"); }, get desc() { return i18n("plugins.types.eeb2d48d3eaa"); } },
   { id: "venue:read", get label() { return i18n("plugins.types.6dc54a9470ed"); }, get desc() { return i18n("plugins.types.c958b2f88de5"); } },
@@ -331,6 +333,12 @@ export interface OnethuApi {
     physicalExam(): Promise<Array<[string, string]>>;
     assessmentList(): Promise<Array<[string, boolean, string]>>;
   };
+  /** 系统字体（PDF 文本抽取补全用，2026-11）：部分 LaTeX 中文 PDF 没有 /ToUnicode，
+   *  只能靠"嵌入字形轮廓 ↔ 系统同款字体字形"的指纹匹配还原 Unicode。只读白名单路径，
+   *  需 `font:read`；找不到/读失败返回 null，插件按无法还原降级。 */
+  fonts: {
+    system(family: string): Promise<{ family: string; path: string; b64: string } | null>;
+  };
   learn: {
     semesters(): Promise<string[]>;
     courses(semesterId?: string): Promise<{ semester: string; courses: import("@onethu/core").CourseInfo[] }>;
@@ -339,6 +347,8 @@ export interface OnethuApi {
     files(courseId: string, semesterId?: string): Promise<import("@onethu/core").CourseFile[]>;
     /** 下载课件/附件到下载目录，返回本地路径（fileId/filename 来自 files 列表） */
     download(fileId: string, filename?: string): Promise<string>;
+    /** 读取课件/附件原始字节（base64；PDF 等二进制解析用）。与 download 同一 learn 专线会话 */
+    fileContent(fileId: string, filename?: string): Promise<{ name: string; mime: string; size: number; b64: string }>;
     reply(wlkcid: string, threadId: string, content: string): Promise<void>;
     post(wlkcid: string, bqid: string, title: string, html: string): Promise<void>;
     bbsBoards(wlkcid: string): Promise<import("@onethu/core").LearnBbsBoard[]>;
