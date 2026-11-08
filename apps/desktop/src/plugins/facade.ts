@@ -1665,17 +1665,17 @@ export function buildApi(pluginId: string, perms: Set<string>, options: { before
     },
     plugins: {
       /** 列出已启用 JS 插件及其命令（供 OH 等调用方做工具发现）。需 plugins:call 权限 */
-      list: async (): Promise<Array<{ pluginId: string; pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string }> }>> => {
+      list: async (): Promise<Array<{ pluginId: string; pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string; agentHint?: string }> }>> => {
         gate(perms, "plugins:call", "plugins.list");
         const { liveCommands } = await import("./loader.js");
-        const byPlugin = new Map<string, { pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string }> }>();
+        const byPlugin = new Map<string, { pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string; agentHint?: string }> }>();
         for (const [key, cmd] of liveCommands) {
           const pid = key.split(":")[0] ?? "";
           if (!pid || pid === "onethu.harness") continue;
           const rec = getPlugin(pid);
           if (!rec?.enabled) continue;
           const entry = byPlugin.get(pid) ?? { pluginName: rec.manifest.name, commands: [] };
-          entry.commands.push({ id: cmd.id, title: cmd.title, inputLabel: cmd.inputLabel });
+          entry.commands.push({ id: cmd.id, title: cmd.title, inputLabel: cmd.inputLabel, agentHint: cmd.agentHint });
           byPlugin.set(pid, entry);
         }
         return [...byPlugin.entries()].map(([pluginId, v]) => ({ pluginId, ...v }));

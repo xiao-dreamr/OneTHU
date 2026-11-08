@@ -115,6 +115,7 @@ export default async function activate(ctx) {
 | `title` | string | 按钮文案 |
 | `inputLabel` / `inputPlaceholder` | string | 输入框标签与占位符；未设置时不渲染输入框 |
 | `dock` | boolean | 标记为对话面板命令，见 §10 |
+| `agentHint` | string | 给 OH / Agent 的命令说明：什么时候用、如何续读。随 `list_plugin_cmds` 输出；建议 ≤600 字 |
 
 ### 3.4 主题插件
 
@@ -813,7 +814,7 @@ atom-link 组件（条目坐标由数据层的查重+落位负责，OH 不自己
 OH 的工具集除内置校园工具外，还内置两个联动工具，使模型可以调用**其他已启用
 插件**的能力：
 
-- `list_plugin_cmds`：列出已启用插件的命令清单；
+- `list_plugin_cmds`：列出已启用插件的命令清单，包含每个命令的 `agentHint`（插件自己写的适用场景/续读提示）；
 - `run_plugin_cmd`：执行某插件命令（`pluginId` / `cmdId` / `input`）。
 
 调用经宿主 `onethu.plugins.*` 门禁（OH 清单声明 `plugins:call` 权限）。**安全
@@ -914,6 +915,7 @@ Android WebView 环境不允许执行任意路径的二进制文件，sidecar �
 
 | 版本 | 变更 |
 |---|---|
+| v1.26 | 插件命令新增 `agentHint`：随 `plugins.list` / `list_plugin_cmds` 输出，插件自行说明适用场景与续读方式；OH 系统提示词改为通用“先查插件命令并读提示”，移除 PDF 专属硬编码 |
 | v1.25 | 新增 `fonts.system`（`font:read`）：按白名单读系统字体，供插件做字形轮廓匹配；配套 `lib/systemFonts.ts`、`tools/system-font-test.mjs` |
 | v1.24 | 插件功能页并入 **OneShot 候选**（`state/quickAccess.ts`）：插件 tab 与一级页并列出现在快速入口/更多功能配置里；配合既有 `ext.homeDock`，插件页可同时进「首页一级功能区」与「OneShot」 |
 | v1.23 | 新增 `learn.fileContent`：读取课件/附件**原始字节**（base64，≤64MB），走 learn 专线会话（webvpn 包装域 + 原生 cookie 仓 + `_csrf`），供插件解析 PDF 等二进制；与 `learn.download`（落盘返回路径）互补 |

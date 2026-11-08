@@ -185,6 +185,10 @@ export interface PluginCommand {
   inputPlaceholder?: string;
   /** rust 插件可选：标记为对话面板命令（宿主左下角 dock 据此渲染） */
   dock?: boolean;
+  /** 给 OH / Agent 的命令能力说明：告诉模型「什么时候该用、怎么续读」。
+   *  会随 `plugins.list` 进入 Harness 的 `list_plugin_cmds`；由插件自己维护，
+   *  宿主不写死任何插件名或领域逻辑。纯文本，建议 ≤ 600 字。 */
+  agentHint?: string;
 }
 
 /** 传给插件 activate(ctx) 的完整上下文 */
@@ -819,7 +823,7 @@ export interface OnethuApi {
   };
   plugins: {
     /** 列出已启用 JS 插件及其命令（联动插件工具发现）。需 plugins:call 权限 */
-    list(): Promise<Array<{ pluginId: string; pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string }> }>>;
+    list(): Promise<Array<{ pluginId: string; pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string; agentHint?: string }> }>>;
     /** 执行已启用插件的命令（高危：命令可能含写操作，由插件内部两段确认兜底）。需 plugins:call 权限 */
     call(pluginId: string, cmdId: string, input?: string): Promise<unknown>;
   };

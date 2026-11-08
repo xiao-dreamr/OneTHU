@@ -227,7 +227,12 @@ async function activateOnce(id: string, mod?: any, blobUrl?: string): Promise<vo
     onethu: api,
     registerCommand: (cmd, run) => {
       if (!cmd?.id || typeof run !== "function") return;
-      liveCommands.set(`${id}:${cmd.id}`, { ...cmd, pluginId: id, run });
+      /* agentHint 是插件自己提供的模型侧能力说明；只保留有界纯文本，
+         避免插件把超长/控制字符塞进每一次 list_plugin_cmds 结果。 */
+      const agentHint = typeof cmd.agentHint === "string"
+        ? cmd.agentHint.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 800)
+        : undefined;
+      liveCommands.set(`${id}:${cmd.id}`, { ...cmd, agentHint: agentHint || undefined, pluginId: id, run });
       notifyCmds();
     },
     /** 注册侧栏功能页（UI 自由化）：pageKey = plugin:<id>:<tabId>，内容经 ui.onTabReady 渲染 */
