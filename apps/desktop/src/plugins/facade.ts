@@ -1687,6 +1687,12 @@ export function buildApi(pluginId: string, perms: Set<string>, options: { before
         const { runCommand } = await import("./loader.js");
         return runCommand(String(pluginId ?? ""), String(cmdId ?? ""), String(input ?? ""));
       },
+      /** OH Harness 在会话开始/每轮/命令执行前取命中的插件提示；筛选和 3 条上限都由宿主完成。 */
+      agentHints: async (input) => {
+        gate(perms, "plugins:call", "plugins.agentHints");
+        const { agentHintsFor } = await import("./loader.js");
+        return agentHintsFor(input ?? { mode: "turn" });
+      },
     },
     /* 极客模式：浏览器探索（桌面 Only；能力最小面：launch/navigate/eval/snapshot/close；全走 ui 门） */
     browser: {

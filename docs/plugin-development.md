@@ -821,6 +821,37 @@ OH 的工具集除内置校园工具外，还内置两个联动工具，使模�
 提示**：插件命令可能包含写操作，模型被指示执行前向用户说明；写型命令应由插件
 内部实现两段式确认（参照 OH 的 ConfirmNeeded 机制）。
 
+### 9.4.1 插件主动提示（agentHint v2）
+
+命令的 `agentHint` 只在 `list_plugin_cmds` 被调用时可见；如果希望插件**主动**把提示送进上下文，
+用 `registerAgentHint`：
+
+```js
+ctx.registerAgentHint({
+  id: "pdf-reading",
+  text: "读取无 ToUnicode 的课件 PDF 时，先找 read_pdf 命令，按页续读……",
+  triggers: [
+    { kind: "session-start" },
+    { kind: "keyword", keywords: ["PDF", "课件", "讲义"] },
+    { kind: "command", commandId: "read_pdf" }
+  ],
+  priority: 10
+});
+```
+
+| 触发 | 注入时机 |
+|---|---|
+| `session-start` | 新会话第一轮，作为系统提示中的插件能力说明 |
+| `keyword` | 当前用户输入命中关键词时，进入**当轮**上下文 |
+| `command` | 该命令经 `run_plugin_cmd` 执行时，随本次工具结果返回 |
+
+宿主限制：
+
+- 每轮最多 3 条、每条 600 字，按 `priority` 降序截断；
+- 只筛选已启用插件；停用/卸载即移除；
+- 文本是第三方能力说明，作为不可信数据标注，不授予权限、不覆盖用户指令；
+- 插件不能直接修改系统提示词，只能声明触发条件，由宿主筛选。
+
 ### 9.5 OH 接入 MCP 服务器
 
 OH 可作为 MCP（Model Context Protocol）客户端调用外部工具。服务器在
@@ -915,6 +946,7 @@ Android WebView 环境不允许执行任意路径的二进制文件，sidecar �
 
 | 版本 | 变更 |
 |---|---|
+| v1.27 | 插件主动提示：新增 `ctx.registerAgentHint`，支持会话开始/关键词/命令三种触发；宿主按 priority 每轮最多注入 3 条（每条 ≤600 字），Harness 在会话首轮、当前轮和命令结果中消费 |
 | v1.26 | 插件命令新增 `agentHint`：随 `plugins.list` / `list_plugin_cmds` 输出，插件自行说明适用场景与续读方式；OH 系统提示词改为通用“先查插件命令并读提示”，移除 PDF 专属硬编码 |
 | v1.25 | 新增 `fonts.system`（`font:read`）：按白名单读系统字体，供插件做字形轮廓匹配；配套 `lib/systemFonts.ts`、`tools/system-font-test.mjs` |
 | v1.24 | 插件功能页并入 **OneShot 候选**（`state/quickAccess.ts`）：插件 tab 与一级页并列出现在快速入口/更多功能配置里；配合既有 `ext.homeDock`，插件页可同时进「首页一级功能区」与「OneShot」 |

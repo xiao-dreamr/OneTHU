@@ -177,6 +177,8 @@ export interface CommandResult {
   kv?: Array<{ k: string; v: string }>;
 }
 
+export type { AgentHintMode, AgentHintRequest, AgentHintTrigger, PluginAgentHint, SelectedAgentHint } from "./agentHints.js";
+
 export interface PluginCommand {
   id: string;
   title: string;
@@ -196,6 +198,8 @@ export interface PluginContext {
   onethu: OnethuApi;
   /** 注册命令（管理页展示、用户点击执行） */
   registerCommand(cmd: PluginCommand, run: (input: string) => Promise<unknown> | unknown): void;
+  /** 注册「主动提示」：仅在这些时机由宿主筛入上下文，不直接改系统提示。 */
+  registerAgentHint(hint: import("./agentHints.js").PluginAgentHint): void;
   /** 注册侧栏功能页（UI 自由化）：应用导航出现本插件的 tab；
    *  页面内容由插件在容器内全权渲染（onethu.ui.onTabReady / getTabRoot 拿 DOM）。 */
   registerTab(tab: { id: string; title: string; iconSvg?: string }): void;
@@ -826,6 +830,8 @@ export interface OnethuApi {
     list(): Promise<Array<{ pluginId: string; pluginName: string; commands: Array<{ id: string; title: string; inputLabel?: string; agentHint?: string }> }>>;
     /** 执行已启用插件的命令（高危：命令可能含写操作，由插件内部两段确认兜底）。需 plugins:call 权限 */
     call(pluginId: string, cmdId: string, input?: string): Promise<unknown>;
+    /** OH Harness 获取当前时机命中的插件提示；宿主完成筛选/限流。 */
+    agentHints(input: import("./agentHints.js").AgentHintRequest): Promise<import("./agentHints.js").SelectedAgentHint[]>;
   };
   /** 极客模式：浏览器探索（桌面 Only；能力最小面） */
   browser: {
