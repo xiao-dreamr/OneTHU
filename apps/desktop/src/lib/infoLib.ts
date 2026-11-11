@@ -693,7 +693,11 @@ async function libEnsureSessionInner(): Promise<boolean> {
     } catch {
       /* ignore */
     }
-    return true;
+    /* 网关票只证明「网关愿意签票」，不证明 info 域会话仍属于本人。
+       无凭据/冷却期的只读探针只能算 unknown：按 fail-closed 返回 false，
+       不广播 authRecovered、不把 session.state 置回 ready。 */
+    void log("LIB-ENSURE probe=unknown（网关票，未验证业务域会话）");
+    return false;
   }
   // This read-only fallback has no verified credentials (or is cooling down).
   // It cannot promote an old in-flight attempt into a new password submission.
