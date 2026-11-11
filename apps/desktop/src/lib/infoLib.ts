@@ -1,4 +1,5 @@
 import { t as i18n, msg as i18nMsg } from "../i18n/index.js";
+import { isSignedOut } from "./sessionLifecycle.js";
 /**
  * thu-info-lib 平台接线层（dev2 管线移植 2026-09-16）。
  *
@@ -616,6 +617,7 @@ export async function libRoamLearn(): Promise<boolean> {
  * 供漫游类数据层（GitLab）单独调用：它们的换票链要的就是这两样。
  */
 export async function libHydrateCredentials(): Promise<boolean> {
+  if (isSignedOut()) return false;
   const h = helper as unknown as { userId: string; password: string; fingerGenPrint?: string };
   if (!h.userId || !h.password) {
     const remembered = await loadRemembered().catch(() => null);
@@ -632,6 +634,9 @@ export async function libHydrateCredentials(): Promise<boolean> {
 }
 
 export async function libEnsureSession(): Promise<boolean> {
+  /* 显式登出是运行时权威位：哪怕保活/HTTP 重放/页面重试走到这里，也不能
+     用「记住密码」把账号自动登回来。 */
+  if (isSignedOut()) return false;
   // ① 对齐 info app：凭据 + 受信指纹先就位（否则重启后无从重登）
   const hasCreds = await libHydrateCredentials();
   // ② 权威探活 + 按需重登（info app 的 verifyAndReLogin 同源实现）：
@@ -748,6 +753,7 @@ export const getSecondaryEntries = async (
 /** 强制完整重登（选课死结借用）：不走探活短路——id 会话权威单一来源，
  *  选课判死时由这里重建，选课不再自清仓互踢（2026-09-18 架构定案） */
 export async function libForceRelogin(): Promise<boolean> {
+  if (isSignedOut()) return false;
   // 受信凭据喂给 lib：helper.fingerGenPrint 是内存变量，boot 恢复/进程重启后
   // 为空 → libLogin 传空指纹 → id 要 2FA → 强制重登必撞墙（02:23 实录
   // "lib 重登失败 → 回退自清仓"）。sessionFinger3（持久层）优先喂入。

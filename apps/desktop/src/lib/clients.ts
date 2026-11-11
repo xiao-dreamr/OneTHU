@@ -19,6 +19,7 @@ import {
   type TwoFactorMethod,
 } from "@onethu/core";
 import { universalFetch, nativeFetch, nativeSeedCookies, nativeCookieClear, isTauri, setHopCookieProvider, setHopLogger, setHopUrlWrapper } from "./transport.js";
+import { markSignedIn, markSignedOut } from "./sessionLifecycle.js";
 import { loginCooldownLeftMs } from "./loginGate.js";
 import { setWebvpnLog, setZhjwxkDebug, setZhjwxkNativeClear, setZhjwxkReloginHook } from "@onethu/core";
 import { redactNetworkLog } from "./networkLog.js";
@@ -422,6 +423,7 @@ async function performLogin(
   try {
     const r = await libLogin(username, password, fingerprint);
     if (r.state === "ready") {
+      markSignedIn();
       session.username = username;
       session.state = "ready";
       // SAVE_FINGER 受信凭据同步（2FA 链内签发的才有效；直登后补签=身份异常）
@@ -1069,6 +1071,7 @@ export async function trySilentRelogin(): Promise<
 
 export async function logout(): Promise<void> {
   // A probe that was still running after the boot deadline cannot revive logout.
+  markSignedOut();
   resumeGeneration++;
   resumeSnapshotUsername = null;
   let sharedError: unknown;

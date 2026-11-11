@@ -12,6 +12,7 @@
  */
 
 import { emitAuthRecovered } from "./authRecovery.js";
+import { isSignedOut } from "./sessionLifecycle.js";
 
 /** scope 级原地恢复：softRelogin（WebVPN 全链透明重建，CampusSession 内单飞，
  *  并发弹回只跑一条链）。20s 节流窗口内返回 false——窗口内复用 true 会造出
@@ -28,6 +29,7 @@ export function softRecover(scope: string): Promise<boolean> {
       const { persist, logLine, session } = await import("./clients.js");
       const t0 = Date.now();
       // lib 单管线：会话守卫（探活→死则内存凭据完整重登，受信凭据免 2FA）
+      if (isSignedOut()) return false;
       const { libEnsureSession } = await import("./infoLib.js");
       const ok = await libEnsureSession();
       if (ok) {
@@ -63,7 +65,7 @@ export async function ensureLearnSession(): Promise<boolean> {
     const { learn, session } = await import("./clients.js");
     // 登录/2FA/已登出阶段不插后台探针：startLogin 与 2FA 自己持有会话门；
     // 这里只维护“已经 ready 的正常使用期”的 learn 会话。
-    if (session.state !== "ready") return false;
+    if (isSignedOut() || session.state !== "ready") return false;
     const ok = await learn.ensureSession();
     if (ok) {
       emitAuthRecovered("learn");
@@ -119,6 +121,7 @@ export function installKeepalive(): void {
   setInterval(() => {
     void (async () => {
       try {
+        if (isSignedOut()) return;
         // lib 单管线：探活 + 死则内存凭据静默重登（受信凭据免 2FA）
         const { libEnsureSession } = await import("./infoLib.js");
         const { persist, session } = await import("./clients.js");
