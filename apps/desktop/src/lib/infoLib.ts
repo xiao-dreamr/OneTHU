@@ -299,6 +299,24 @@ export async function restoreGitlabSession(): Promise<void> {
   }
 }
 
+/* ═══════════════ 后台恢复不得抢交互式 2FA ═══════════════
+   保活、HTTP 透明重放、learn 宿主恢复都可能触发 lib 登录；它们没有 UI 去
+   adopt 2FA futures，旧实现会挂在摇柄上直到 3 分钟登录超时，占住全局登录锁。
+   后台恢复期间 2FA hook 立即拒绝 AUTH_2FA_REQUIRED，调用方快速失败并让用户
+   去登录页完成二次认证。计数支持嵌套/并发调用。 */
+let nonInteractiveRecoveryDepth = 0;
+function twoFactorUnavailable(): Error {
+  return Object.assign(new Error("AUTH_2FA_REQUIRED"), { code: "AUTH_2FA_REQUIRED" });
+}
+export async function withNonInteractiveRecovery<T>(work: () => Promise<T>): Promise<T> {
+  nonInteractiveRecoveryDepth += 1;
+  try {
+    return await work();
+  } finally {
+    nonInteractiveRecoveryDepth = Math.max(0, nonInteractiveRecoveryDepth - 1);
+  }
+}
+
 /* ═══════════════ 2FA futures：lib 同步 hooks ⇄ OneTHU 两段式 UI ═══════════════ */
 
 const METHOD_NAMES: { [k in "wechat" | "mobile" | "totp"]: string } = {
@@ -324,6 +342,7 @@ export function getSelfFinger3(): string {
 }
 
 helper.twoFactorMethodHook = (hasWeChatBool, phone, hasTotp) => {
+  if (nonInteractiveRecoveryDepth > 0) return Promise.reject(twoFactorUnavailable());
   const methods: TwoFactorMethod[] = [];
   if (hasWeChatBool) methods.push({ type: "wechat", name: METHOD_NAMES.wechat });
   if (phone) methods.push({ type: "mobile", name: METHOD_NAMES.mobile, detail: phone });
@@ -344,7 +363,7 @@ helper.twoFactorMethodHook = (hasWeChatBool, phone, hasTotp) => {
 };
 
 helper.twoFactorAuthHook = () =>
-  new Promise<string>((resolve, reject) => {
+  nonInteractiveRecoveryDepth > 0 ? Promise.reject(twoFactorUnavailable()) : new Promise<string>((resolve, reject) => {
     rejectCode = reject;
     resolveCode = (code) => {
       resolveCode = null;
@@ -637,6 +656,16 @@ export async function libEnsureSession(): Promise<boolean> {
   /* 显式登出是运行时权威位：哪怕保活/HTTP 重放/页面重试走到这里，也不能
      用「记住密码」把账号自动登回来。 */
   if (isSignedOut()) return false;
+  /* 已有登录链（尤其 2FA）正在跑：后台守卫让路，不加入排队。
+     否则会 await outstandingLoginPromise 到 3 分钟超时，手动登录也一起卡住。 */
+  if (libLoginPending()) {
+    void log("LIB-ENSURE skip: login pending");
+    return false;
+  }
+  return withNonInteractiveRecovery(libEnsureSessionInner);
+}
+
+async function libEnsureSessionInner(): Promise<boolean> {
   // ① 对齐 info app：凭据 + 受信指纹先就位（否则重启后无从重登）
   const hasCreds = await libHydrateCredentials();
   // ② 权威探活 + 按需重登（info app 的 verifyAndReLogin 同源实现）：
@@ -754,6 +783,11 @@ export const getSecondaryEntries = async (
  *  选课判死时由这里重建，选课不再自清仓互踢（2026-09-18 架构定案） */
 export async function libForceRelogin(): Promise<boolean> {
   if (isSignedOut()) return false;
+  if (libLoginPending()) return false;
+  return withNonInteractiveRecovery(libForceReloginInner);
+}
+
+async function libForceReloginInner(): Promise<boolean> {
   // 受信凭据喂给 lib：helper.fingerGenPrint 是内存变量，boot 恢复/进程重启后
   // 为空 → libLogin 传空指纹 → id 要 2FA → 强制重登必撞墙（02:23 实录
   // "lib 重登失败 → 回退自清仓"）。sessionFinger3（持久层）优先喂入。
