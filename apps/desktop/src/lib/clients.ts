@@ -21,7 +21,7 @@ import {
 import { universalFetch, nativeFetch, nativeSeedCookies, nativeCookieClear, isTauri, setHopCookieProvider, setHopLogger, setHopUrlWrapper } from "./transport.js";
 import { markSignedIn, markSignedOut } from "./sessionLifecycle.js";
 import { loginCooldownLeftMs } from "./loginGate.js";
-import { setWebvpnLog, setZhjwxkDebug, setZhjwxkNativeClear, setZhjwxkReloginHook } from "@onethu/core";
+import { setWebvpnLog, setZhjwxkDebug, setZhjwxkNativeClear, setZhjwxkReloginHook, resetExternalHomeworkSessionRetryState } from "@onethu/core";
 import { redactNetworkLog } from "./networkLog.js";
 import { loginFailureDiagnostic } from "./loginErrors.js";
 import { probeLearnSession } from "./learnRecovery.js";
@@ -287,6 +287,12 @@ session.info.setRenewers({
 // 指数冷却（30s 起步、封顶 10min）防风控连锤。
 let libSoftFailStreak = 0;
 let libSoftCooldownUntil = 0;
+/** 登录成功/登出/换账号：清空进程级重登失败冷却，别把旧账号的稀疏恢复窗口带过去。 */
+function resetAuthRecoveryBackoff(): void {
+  libSoftFailStreak = 0;
+  libSoftCooldownUntil = 0;
+}
+
 async function libSoftRelogin(): Promise<boolean> {
   if (Date.now() < libSoftCooldownUntil) return false;
   try {
@@ -424,6 +430,8 @@ async function performLogin(
     const r = await libLogin(username, password, fingerprint);
     if (r.state === "ready") {
       markSignedIn();
+      resetAuthRecoveryBackoff();
+      resetExternalHomeworkSessionRetryState();
       session.username = username;
       session.state = "ready";
       // SAVE_FINGER 受信凭据同步（2FA 链内签发的才有效；直登后补签=身份异常）
@@ -1072,6 +1080,8 @@ export async function trySilentRelogin(): Promise<
 export async function logout(): Promise<void> {
   // A probe that was still running after the boot deadline cannot revive logout.
   markSignedOut();
+  resetAuthRecoveryBackoff();
+  resetExternalHomeworkSessionRetryState();
   resumeGeneration++;
   resumeSnapshotUsername = null;
   let sharedError: unknown;

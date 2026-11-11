@@ -214,7 +214,7 @@ const cookieBoundary = createAuthCookieBoundary({
 // Runs inside the library's single flight: manual login AND internal recovery share
 // the same gate. Joining a pending chain or submitting a 2FA code never clears cookies.
 helper.beforeLoginAttemptHook = async () => {
-  markLoginAttempt();
+  markLoginAttempt(helper.userId);
   // Internal library recovery can bypass clients.login; it must use the same device identity.
   const { currentFingerprint } = await import("./clients.js");
   helper.fingerprint = await currentFingerprint();
@@ -227,7 +227,7 @@ helper.beforeLoginAttemptHook = async () => {
   void log(`AUTH-PHASE cookies-${boundary}`);
 };
 helper.afterLoginSuccessHook = () => {
-  markLoginSucceeded();
+  markLoginSucceeded(helper.userId);
   void log("AUTH-PHASE session-established");
 };
 
@@ -672,7 +672,7 @@ async function libEnsureSessionInner(): Promise<boolean> {
   //    取用户信息比对 ryh；只有明确过期才使用 helper 上的凭据重登。
   //    比原来「webvpn 端点里有 XSRF-TOKEN 就算活」强：后者只证明网关发了票，
   //    不证明 info 域会话是本人的活会话，会「假活」→ 后续 401 → 用户被踢。
-  if (hasCreds && loginCooldownLeftMs() <= 0) {
+  if (hasCreds && loginCooldownLeftMs(helper.userId) <= 0) {
     const relogged = await verifyAndReLogin(helper); // 返回 false = 会话还活着
     if (relogged) void log("LIB-ENSURE 静默重登成功（verifyAndReLogin）");
     return true;
