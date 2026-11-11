@@ -2,7 +2,7 @@
  * 网络学堂客户端（本科生视角）。
  * 登录 = CAS ticket 漫游 → 课程列表页抓 _csrf；接口失效自动重登录（retryAfterLogin）。
  */
-import { AuthRequiredError, HttpClient } from "../http.js";
+import { AuthRequiredError, HttpClient, ReplaySuppressedError } from "../http.js";
 import { encryptPassword } from "../crypto/sm2.js";
 import * as urls from "./urls.js";
 import { collectLearnOffsetPages, collectLearnSizePages, readLearnTotal } from "./pagination.js";
@@ -1116,6 +1116,11 @@ export class LearnClient {
       }
       });
     } catch (e) {
+      if (e instanceof ReplaySuppressedError) {
+        /* 写请求已经被服务端看到过：会话已重建，但自动重放会重复提交。
+           交由用户刷新后自行决定。 */
+        return { ok: false, msg: "会话已恢复，请刷新作业状态后重新提交" };
+      }
       if (e instanceof SessionExpiredError) {
         return { ok: false, msg: "会话已过期，请重新登录后再提交" };
       }
