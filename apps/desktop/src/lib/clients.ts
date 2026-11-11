@@ -20,6 +20,7 @@ import {
 } from "@onethu/core";
 import { universalFetch, nativeFetch, nativeSeedCookies, nativeCookieClear, isTauri, setHopCookieProvider, setHopLogger, setHopUrlWrapper } from "./transport.js";
 import { markSignedIn, markSignedOut } from "./sessionLifecycle.js";
+import { decryptSecret, encryptSecret } from "./secureSecret.js";
 import { loginCooldownLeftMs } from "./loginGate.js";
 import { setWebvpnLog, setZhjwxkDebug, setZhjwxkNativeClear, setZhjwxkReloginHook, resetExternalHomeworkSessionRetryState } from "@onethu/core";
 import { redactNetworkLog } from "./networkLog.js";
@@ -142,7 +143,9 @@ export async function loadRemembered(): Promise<RememberedCredentials | null> {
   try {
     const j = JSON.parse(raw) as { username?: string; secret?: string };
     if (!j.username || !j.secret) return null;
-    const password = deobfuscateSecret(j.secret, j.username);
+    const password = j.secret.startsWith("aes-gcm-v1:")
+      ? await decryptSecret(j.secret)
+      : deobfuscateSecret(j.secret, j.username); // 旧版本迁移读取
     if (!password) return null;
     return { username: j.username, password };
   } catch {
@@ -708,15 +711,17 @@ export async function persist(): Promise<void> {
   await fileWrite(SESSION_FILE, JSON.stringify(snapshot));
   // 记住密码：登录成功链路（含 2FA 完成）统一在此落盘
   if (pendingSecret?.remember && pendingSecret.password) {
-    await fileWrite(
-      SECRET_FILE,
-      JSON.stringify({
-        v: 1,
-        username: pendingSecret.username,
-        secret: obfuscateSecret(pendingSecret.password, pendingSecret.username),
-        savedAt: Date.now(),
-      }),
-    ).catch(() => undefined);
+    /* 密码优先 AES-GCM（密钥 non-extractable，只在 IndexedDB）；加密不可用时
+       宁可不落盘，也不回退到可逆 XOR。旧凭据仍可按旧格式读取并迁移。 */
+    const secret = await encryptSecret(pendingSecret.password).catch(() => "");
+    if (secret) {
+      await fileWrite(
+        SECRET_FILE,
+        JSON.stringify({ v: 2, username: pendingSecret.username, secret, savedAt: Date.now() }),
+      ).catch(() => undefined);
+    } else {
+      await logLine("SECRET encrypted storage unavailable; password not persisted").catch(() => undefined);
+    }
   }
 }
 
