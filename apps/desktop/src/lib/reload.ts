@@ -20,10 +20,29 @@ import { isSignedOut } from "./sessionLifecycle.js";
  *  落回错误条/下一层兜底（看门狗与实例重放仍在后台续命，手动重试必中活会话）。 */
 let lastAttempt = 0;
 let recoverInflight: Promise<boolean> | null = null;
+/** 窗口内/失败后的排队恢复：scope → timer。最多 3 次退避，避免永久失败源无限打。 */
+const recoveryQueue = new Map<string, { timer: ReturnType<typeof setTimeout>; attempt: number }>();
+const RECOVERY_BACKOFF = [5_000, 15_000, 60_000] as const;
+
+function queueRecovery(scope: string, delay: number, attempt: number): void {
+  const existing = recoveryQueue.get(scope);
+  if (existing) clearTimeout(existing.timer);
+  const nextAttempt = Math.min(attempt, RECOVERY_BACKOFF.length);
+  const timer = setTimeout(() => {
+    recoveryQueue.delete(scope);
+    /* softRecover 失败会自己按当前 attempt 排队；这里不再重复排。 */
+    void softRecover(scope);
+  }, Math.max(0, delay));
+  recoveryQueue.set(scope, { timer, attempt: nextAttempt });
+}
 export function softRecover(scope: string): Promise<boolean> {
   const now = Date.now();
   if (recoverInflight) return recoverInflight;
-  if (now - lastAttempt < 20_000) return Promise.resolve(false);
+  if (now - lastAttempt < 20_000) {
+    /* 窗口内不返回「失败」让页面永久停住：记下 scope，窗口结束后自动补一次。 */
+    queueRecovery(scope, 20_000 - (now - lastAttempt), 0);
+    return Promise.resolve(false);
+  }
   recoverInflight = (async () => {
     try {
       const { persist, logLine, session } = await import("./clients.js");
@@ -41,9 +60,11 @@ export function softRecover(scope: string): Promise<boolean> {
       }
       await logLine(`SOFT-RECOVER[${scope}] ${ok ? "ok" : "fail"} (${Date.now() - t0}ms)`).catch(() => undefined);
       lastAttempt = Date.now();
+      if (!ok) queueRecovery(scope, RECOVERY_BACKOFF[0], 1);
       return ok;
     } catch {
       lastAttempt = Date.now();
+      queueRecovery(scope, RECOVERY_BACKOFF[0], 1);
       return false;
     } finally {
       recoverInflight = null;
@@ -104,7 +125,9 @@ export function installAuthWatchdog(): void {
     try {
       const { onAuthRequired } = await import("@onethu/core");
       onAuthRequired(() => {
-        void softRecover("global");
+        void softRecover("global").then((ok) => {
+          if (!ok) queueRecovery("global", RECOVERY_BACKOFF[0], 1);
+        });
       });
     } catch {
       /* core 不可用时静默（仅存在于非打包预览环境） */
