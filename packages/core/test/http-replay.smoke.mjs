@@ -4,7 +4,7 @@
  */
 import { HttpClient, ReplaySuppressedError } from "../src/http.ts";
 
-const LOGIN_HTML = '<html><body><input id="sm2publicKey"><input name="i_pass"></body></html>';
+const LOGIN_HTML = '<html><body><form action="/b/j_spring_security_check"><input id="sm2publicKey"><input name="i_pass"></form></body></html>';
 let pass = 0;
 const ok = (cond, label) => { console.log(cond ? "PASS" : "FAIL", label); if (cond) pass++; };
 
@@ -46,5 +46,39 @@ const ok = (cond, label) => { console.log(cond ? "PASS" : "FAIL", label); if (co
   ok(relogins === 1 && body === "ok", "GET 重放后返回新响应");
 }
 
-console.log(`http-replay: ${pass}/5`);
-process.exit(pass === 5 ? 0 : 1);
+
+/* R5：正文只含 i_pass 字面量、没有登录语境 → 不重登。 */
+{
+  let calls = 0;
+  let relogins = 0;
+  const client = new HttpClient({
+    fetch: async () => {
+      calls += 1;
+      return new Response('<html><body><p>说明页示例：name="i_pass"</p></body></html>', {
+        status: 200, headers: { "content-type": "text/html" },
+      });
+    },
+  });
+  client.onAuthRequired(async () => { relogins += 1; });
+  await client.text("https://learn.tsinghua.edu.cn/f/wlxt/index/course/student/index");
+  ok(calls === 1 && relogins === 0, `R5 无登录语境不误判（calls=${calls} relogins=${relogins}）`);
+}
+
+/* R5：登录 form 语境仍然触发一次重登 + GET 重放。 */
+{
+  let calls = 0;
+  let relogins = 0;
+  const login = '<html><body><form action="/b/j_spring_security_check"><input id="sm2publicKey"><input name="i_pass"></form></body></html>';
+  const client = new HttpClient({
+    fetch: async () => {
+      calls += 1;
+      return new Response(calls === 1 ? login : "ok", { status: 200, headers: { "content-type": "text/html" } });
+    },
+  });
+  client.onAuthRequired(async () => { relogins += 1; });
+  await client.text("https://learn.tsinghua.edu.cn/f/wlxt/index/course/student/index");
+  ok(calls === 2 && relogins === 1, `R5 登录 form 仍触发重登（calls=${calls} relogins=${relogins}）`);
+}
+
+console.log(`http-replay: ${pass}/7`);
+process.exit(pass === 7 ? 0 : 1);

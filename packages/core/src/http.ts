@@ -627,10 +627,22 @@ export class HttpClient {
 
   #looksLoggedOut(body: string, response: Response): boolean {
     if (this.#relogin === null) return false;
-    if (/\/do\/off\/ui\/auth\/login\//.test(response.url || "")) return true;
+    const finalUrl = response.url || "";
+    if (/\/do\/off\/ui\/auth\/login\//.test(finalUrl)) return true;
     // 舞步中止标记（transport 层检测到链被 302 进 webvpn 登录舞）：视为失登，
     // 走 #relogin 单飞重建后重试——绝不各自跳登录舞互烧票据（2026-09-13 定案）
     if (response.headers.get("x-onethu-auth-dance") === "webvpn-login") return true;
-    return /id="sm2publicKey"/.test(body) || /name="i_pass"/.test(body);
+    const marker = /id="sm2publicKey"/.test(body) || /name="i_pass"/.test(body);
+    if (!marker) return false;
+    /* 正文里出现登录字段只是「疑似」：说明页、错误页回显、被代理页面都可能
+       包含这些字面量。必须有登录语境（登录域名、登录 form action）才提交密码，
+       否则误判一次就是一次多余密码 POST。 */
+    const loginContext = /(?:id\.tsinghua\.edu\.cn|oauth\.tsinghua\.edu\.cn|\/f\/login\b|\/do\/off\/ui\/auth\/login\/)/i.test(finalUrl)
+      || /<form\b[^>]*(?:j_spring_security_check|id\.tsinghua\.edu\.cn|\/do\/off\/ui\/auth\/login\/|\/f\/login\b)/i.test(body);
+    if (!loginContext) {
+      this.debug?.("HTTP-AUTH-SUSPECT 登录字段但无登录语境，按普通页面处理");
+      return false;
+    }
+    return true;
   }
 }
