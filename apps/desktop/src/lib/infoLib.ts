@@ -788,6 +788,13 @@ export const getSecondaryEntries = async (
 export async function libForceRelogin(): Promise<boolean> {
   if (isSignedOut()) return false;
   if (libLoginPending()) return false;
+  /* 强制重登不是「绕过准入」：选课页反复死结时，登录冷却必须仍然生效，
+     否则会连续提交密码撞风控。冷却由 libLogin 的 beforeLoginAttemptHook 记账。 */
+  const account = (helper as unknown as { userId?: string }).userId ?? "";
+  if (loginCooldownLeftMs(account) > 0) {
+    void log("FORCE-RELOGIN skip: login cooldown");
+    return false;
+  }
   return withNonInteractiveRecovery(libForceReloginInner);
 }
 
