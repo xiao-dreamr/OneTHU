@@ -25,16 +25,19 @@ const recoveryQueue = new Map<string, { timer: ReturnType<typeof setTimeout>; at
 const RECOVERY_BACKOFF = [5_000, 15_000, 60_000] as const;
 
 function queueRecovery(scope: string, delay: number, attempt: number): void {
-  const existing = recoveryQueue.get(scope);
-  if (existing) clearTimeout(existing.timer);
-  const nextAttempt = Math.min(attempt, RECOVERY_BACKOFF.length);
+  if (recoveryQueue.has(scope)) return; // 已有排队：不重复重置计时器/次数
+  const nextAttempt = Math.min(attempt, RECOVERY_BACKOFF.length - 1);
   const timer = setTimeout(() => {
-    recoveryQueue.delete(scope);
-    /* softRecover 失败会自己按当前 attempt 排队；这里不再重复排。 */
-    void softRecover(scope);
+    void softRecover(scope).then((ok) => {
+      recoveryQueue.delete(scope);
+      if (!ok && nextAttempt + 1 < RECOVERY_BACKOFF.length) {
+        queueRecovery(scope, RECOVERY_BACKOFF[nextAttempt + 1]!, nextAttempt + 1);
+      }
+    });
   }, Math.max(0, delay));
   recoveryQueue.set(scope, { timer, attempt: nextAttempt });
 }
+
 export function softRecover(scope: string): Promise<boolean> {
   const now = Date.now();
   if (recoverInflight) return recoverInflight;
@@ -125,9 +128,7 @@ export function installAuthWatchdog(): void {
     try {
       const { onAuthRequired } = await import("@onethu/core");
       onAuthRequired(() => {
-        void softRecover("global").then((ok) => {
-          if (!ok) queueRecovery("global", RECOVERY_BACKOFF[0], 1);
-        });
+        void softRecover("global");
       });
     } catch {
       /* core 不可用时静默（仅存在于非打包预览环境） */
